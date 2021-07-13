@@ -1,11 +1,11 @@
 # cmake-ios-toolchain
 
 Implements toolchain for `CMake` ("CeeMake"),<br>
-which supports `iOS`, Mac's `Catalyst` and maybe `tvOS` and `watchOS` targets
+which supports `iOS`, Mac's `Catalyst` and maybe `tvOS` and `watchOS` targets<br>
 (not tested, but they should work as well).
 
-Let's appreciate that this does not just add iOS support to CeeMake,<br>
-and the example also deonstrates running CMake directly from ExCode.
+Let's appreciate that this does not just add EyeOhEss support to CeeMake,<br>
+and the example also demonstrates running CMake directly from ExCode.
 
 # Why?
 Because even in 2021, CeeMake still does not have built-in support.
