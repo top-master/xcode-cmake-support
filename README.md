@@ -11,4 +11,4 @@ and the example also demonstrates running CMake directly from ExCode.
 Because even in 2021, CeeMake still does not have built-in support.
 
 Also, I just did NOT want to use CeeMake's generate-project feature (and then modify result into `iOS` version).
-Basically, that would break to whole point of using CeeMake in the first place! (which was reusing same script to compile on multiple platforms).
+Basically, that would break the whole point of using CeeMake in the first place! (which was editing a single script to update all platforms).
