@@ -29,6 +29,39 @@ set (IOS_TOOLCHAIN_INCLUDED TRUE)
 
 
 
+# Function-Override and Macros.
+#
+
+# Helper for setting XCode specific properties.
+# Example:
+# ```
+# xcode_build_settings(myLib GCC_GENERATE_DEBUGGING_SYMBOLS YES)
+# ```
+macro (xcode_build_settings TARGET NAME VALUE)
+    set_property (TARGET ${TARGET} PROPERTY "XCODE_ATTRIBUTE_${NAME}" "${VALUE}")
+endmacro()
+
+# Helpers for logging in Xcode's "Issue navigator" format.
+# Usage:
+# ```
+# xcode_warn(
+#     "Hellp World!"
+#     ${CMAKE_CURRENT_LIST_LINE}
+# )
+# ```
+macro(xcode_warn text line)
+    message("${CMAKE_CURRENT_LIST_DIR}/CMakeLists.txt:${line}:1: warning: ${text}")
+endmacro()
+macro(xcode_fail text line)
+    message("${CMAKE_CURRENT_LIST_DIR}/CMakeLists.txt:${line}:1: error: ${text}")
+endmacro()
+macro(xcode_error text line)
+    message("${CMAKE_CURRENT_LIST_DIR}/CMakeLists.txt:${line}:1: error: ${text}")
+    message(FATAL_ERROR "Can not continue after previous error!")
+endmacro()
+
+
+
 # Platform type.
 #
 
@@ -69,23 +102,30 @@ endif()
 #string (TOLOWER "${PLATFORM_NAME}" PLATFORM_NAME)
 
 # Device-Type.
-if (PLATFORM_NAME STREQUAL "iphonesimulator")
-    set (DEVICE_TYPE "iPhoneSimulator")
-    #set (CPU_ARCH i386;x86_64)
-elseif (PLATFORM_NAME STREQUAL "macosx" OR PLATFORM_NAME STREQUAL "iosmac")
+if (PLATFORM_NAME STREQUAL "iosmac" OR PLATFORM_NAME STREQUAL "macosx")
     set (DEVICE_TYPE "MacOSX")
 elseif (PLATFORM_NAME STREQUAL "iphoneos")
     set (DEVICE_TYPE "iPhoneOS")
     #set (CPU_ARCH armv7;armv7s;arm64)
-elseif (appletvos)
+elseif (PLATFORM_NAME STREQUAL "iphonesimulator")
+    set (DEVICE_TYPE "iPhoneSimulator")
+    #set (CPU_ARCH i386;x86_64)
+elseif (PLATFORM_NAME STREQUAL "appletvos")
     set (DEVICE_TYPE "AppleTVOS")
     set (XCODE_BITCODE true)
-elseif (watchos)
+elseif (PLATFORM_NAME STREQUAL "appletvsimulator")
+    set (DEVICE_TYPE "AppleTVSimulator")
+    set (XCODE_BITCODE true)
+elseif (PLATFORM_NAME STREQUAL "watchos")
     set (DEVICE_TYPE "WatchOS")
     set (XCODE_BITCODE true)
+elseif (PLATFORM_NAME STREQUAL "watchsimulator")
+    set (DEVICE_TYPE "WatchSimulator")
+    set (XCODE_BITCODE true)
 else()
-    message (FATAL_ERROR "Unknown PLATFORM_NAME => \"${PLATFORM_NAME}\" - "
-            "define environment-variable (or pass -D PLATFORM_NAME=iphoneos)")
+    xcode_error ("Unknown PLATFORM_NAME => \"${PLATFORM_NAME}\","
+        " define environment-variable (or pass -D PLATFORM_NAME=iphoneos)"
+        ${CMAKE_CURRENT_LIST_LINE})
 endif()
 
 
@@ -107,7 +147,9 @@ set (PLATFORM_BUNDLE "${PLATFORM_BUNDLE}" CACHE PATH "iOS Platform Materials")
 if (NOT DEFINED PLATFORM_SDK)
     set (PLATFORM_SDK "${PLATFORM_BUNDLE}/SDKs/${DEVICE_TYPE}.sdk")
     if (NOT EXISTS "${PLATFORM_SDK}")
-        message (FATAL_ERROR "Failed to find SDK in ${PLATFORM_SDK}. Set PLATFORM_SDK manually.")
+        xcode_error ("Failed to find SDK in ${PLATFORM_SDK}."
+            " Set PLATFORM_SDK manually."
+            ${CMAKE_CURRENT_LIST_LINE})
     endif()
 endif()
 set (PLATFORM_SDK "${PLATFORM_SDK}" CACHE PATH "SDK chosen")
@@ -118,7 +160,9 @@ file (READ "${PLATFORM_SDK}/SDKSettings.json" XCODE_SDK_JSON)
 string (JSON CPU_ARCH GET "${XCODE_SDK_JSON}" SupportedTargets ${PLATFORM_NAME} Archs)
 string (JSON CPU_ARCH_COUNT LENGTH "${CPU_ARCH}")
 if (CPU_ARCH_COUNT LESS 1)
-    message (FATAL_ERROR "Failed to find architectures list in file \"${PLATFORM_SDK}/SDKSettings.json\"")
+    xcode_error ("Failed to find architectures list"
+        " in file \"${PLATFORM_SDK}/SDKSettings.json\""
+        ${CMAKE_CURRENT_LIST_LINE})
 endif()
 foreach (ID RANGE MATH(EXPR VAR "${CPU_ARCH_COUNT} - 1"))
     string (JSON _TMP GET ${CPU_ARCH} ${ID})
@@ -132,10 +176,13 @@ if (NOT DEFINED ARCHS)
 endif()
 if (NOT ARCHS MATCHES "^\\s*$")
     string (REPLACE " " ";" ARCHS "${ARCHS}")
-    foreach (ID IN LISTS ARCHS)
-        if (NOT ID IN_LIST CMAKE_OSX_ARCHITECTURES)
-            message (WARNING "Xcode's ARCHS environment-variable forced: ${ID}"
-                    " (which is not in SDK archs: ${CMAKE_OSX_ARCHITECTURES})")
+    foreach (ID IN LISTS CMAKE_OSX_ARCHITECTURES)
+        if (NOT ID IN_LIST ARCHS)
+            xcode_warn (
+                "Xcode's ARCHS environment-variable forced override"
+                " (of the SDK default: '${CMAKE_OSX_ARCHITECTURES}')"
+                ${CMAKE_CURRENT_LIST_LINE}
+            )
             set (CMAKE_OSX_ARCHITECTURES ${ARCHS})
             break()
         endif()
@@ -190,8 +237,10 @@ if (NOT DEFINED PLATFORM_ARCH)
         if ("$ENV{PLATFORM_PREFERRED_ARCH}" IN_LIST CMAKE_OSX_ARCHITECTURES)
             set (PLATFORM_ARCH "$ENV{PLATFORM_PREFERRED_ARCH}")
         else()
-            message (FATAL_ERROR "Invalid PLATFORM_PREFERRED_ARCH environment-variable => \"$ENV{PLATFORM_PREFERRED_ARCH}\""
-                    " - available-archs: \"${CMAKE_OSX_ARCHITECTURES}\"")
+            xcode_error ("Invalid PLATFORM_PREFERRED_ARCH environment-variable"
+                " => \"$ENV{PLATFORM_PREFERRED_ARCH}\""
+                " - available-archs: \"${CMAKE_OSX_ARCHITECTURES}\""
+                ${CMAKE_CURRENT_LIST_LINE})
         endif()
     endif()
 endif()
@@ -230,13 +279,41 @@ if (PLATFORM_NAME STREQUAL "iosmac")
         -isystem    "${PLATFORM_SDK}/System/iOSSupport/usr/include"
         -iframework "${PLATFORM_SDK}/System/iOSSupport/System/Library/Frameworks"
     )
-elseif ("${PLATFORM_NAME}" STREQUAL "iphoneos")
+elseif (PLATFORM_NAME STREQUAL "iphoneos")
     set (CMAKE_C_FLAGS
         -target ${PLATFORM_ARCH}-apple-ios13.6 # arm-apple-darwin
         -miphoneos-version-min=13.6
     )
-elseif ("${PLATFORM_NAME}" STREQUAL "iphonesimulator")
-    set (CMAKE_C_FLAGS "-mios-simulator-version-min=7.0")
+elseif (PLATFORM_NAME STREQUAL "iphonesimulator")
+    set (CMAKE_C_FLAGS
+        -target ${PLATFORM_ARCH}-apple-ios13.6-simulator
+        -mios-simulator-version-min=13.6
+    )
+elseif (PLATFORM_NAME STREQUAL "macosx")
+    set (CMAKE_C_FLAGS
+        -target ${PLATFORM_ARCH}-apple-macosx10.15
+        -mmacosx-version-min=10.15
+    )
+elseif (PLATFORM_NAME STREQUAL "appletvos")
+    set (CMAKE_C_FLAGS
+        -target ${PLATFORM_ARCH}-apple-tvos13.4
+        -mappletvos-version-min=13.4
+    )
+elseif (PLATFORM_NAME STREQUAL "appletvsimulator")
+    set (CMAKE_C_FLAGS
+        -target ${PLATFORM_ARCH}-apple-tvos13.4
+        -mappletvsimulator-version-min=13.4
+    )
+elseif (PLATFORM_NAME STREQUAL "watchos")
+    set (CMAKE_C_FLAGS
+        -target ${PLATFORM_ARCH}-apple-watchos6.2
+        -mwatchos-version-min=6.2
+    )
+elseif (PLATFORM_NAME STREQUAL "watchsimulator")
+    set (CMAKE_C_FLAGS
+        -target ${PLATFORM_ARCH}-apple-watchos6.2
+        -mwatchsimulator-version-min=6.2
+    )
 endif()
 
 if (XCODE_BITCODE)
@@ -348,19 +425,5 @@ set (CMAKE_SYSTEM_FRAMEWORK_PATH
     ${PLATFORM_SDK}/System/Library/PrivateFrameworks
     ${PLATFORM_SDK}/Developer/Library/Frameworks
 )
-
-
-
-# Method-Override and Macros.
-#
-
-# Helper for setting XCode specific properties.
-# Example:
-# ```
-# xcode_build_settings(myLib GCC_GENERATE_DEBUGGING_SYMBOLS YES)
-# ```
-macro (xcode_build_settings TARGET NAME VALUE)
-    set_property (TARGET ${TARGET} PROPERTY "XCODE_ATTRIBUTE_${NAME}" "${VALUE}")
-endmacro()
 
 endif() # IOS_TOOLCHAIN_INCLUDED
