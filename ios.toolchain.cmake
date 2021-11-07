@@ -45,19 +45,38 @@ endmacro()
 # Usage:
 # ```
 # xcode_warn(
-#     "Hellp World!"
+#     "Hellp World"
 #     ${CMAKE_CURRENT_LIST_LINE}
 # )
 # ```
-macro(xcode_warn text line)
-    message("${CMAKE_CURRENT_LIST_DIR}/CMakeLists.txt:${line}:1: warning: ${text}")
+macro(xcode_warn text)
+    set (msg "${text}")
+    set (path "${CMAKE_CURRENT_LIST_FILE}")
+    set (line 1)
+    set (type "warning")
+    set (variadic_args ${ARGN})
+    foreach (arg IN LISTS variadic_args)
+        # Location.
+        string (STRIP "${arg}" stripped)
+        if (arg MATCHES "^[0-9]+$")
+            set (line "${stripped}")
+        elseif (arg STREQUAL "ERROR")
+            set (type "error")
+        elseif (EXISTS "${arg}")
+            set (path "${arg}")
+        else()
+            set (msg "${msg} ${arg}")
+        endif()
+    endforeach()
+    # At last log.
+    message ("${path}:${line}:1: ${type}: ${msg}")
 endmacro()
-macro(xcode_fail text line)
-    message("${CMAKE_CURRENT_LIST_DIR}/CMakeLists.txt:${line}:1: error: ${text}")
+macro(xcode_fail text)
+    xcode_warn("${text}" ${ARGN} ERROR)
 endmacro()
-macro(xcode_error text line)
-    message("${CMAKE_CURRENT_LIST_DIR}/CMakeLists.txt:${line}:1: error: ${text}")
-    message(FATAL_ERROR "Can not continue after previous error!")
+macro(xcode_error text)
+    xcode_warn("${text}" ${ARGN} ERROR)
+    message(FATAL_ERROR "Can not continue after previous error.")
 endmacro()
 
 
@@ -124,7 +143,7 @@ elseif (PLATFORM_NAME STREQUAL "watchsimulator")
     set (XCODE_BITCODE true)
 else()
     xcode_error ("Unknown PLATFORM_NAME => \"${PLATFORM_NAME}\","
-        " define environment-variable (or pass -D PLATFORM_NAME=iphoneos)"
+        "define environment-variable (or pass -D PLATFORM_NAME=iphoneos)"
         ${CMAKE_CURRENT_LIST_LINE})
 endif()
 
@@ -148,7 +167,7 @@ if (NOT DEFINED PLATFORM_SDK)
     set (PLATFORM_SDK "${PLATFORM_BUNDLE}/SDKs/${DEVICE_TYPE}.sdk")
     if (NOT EXISTS "${PLATFORM_SDK}")
         xcode_error ("Failed to find SDK in ${PLATFORM_SDK}."
-            " Set PLATFORM_SDK manually."
+            "Set PLATFORM_SDK manually."
             ${CMAKE_CURRENT_LIST_LINE})
     endif()
 endif()
@@ -161,7 +180,7 @@ string (JSON CPU_ARCH GET "${XCODE_SDK_JSON}" SupportedTargets ${PLATFORM_NAME} 
 string (JSON CPU_ARCH_COUNT LENGTH "${CPU_ARCH}")
 if (CPU_ARCH_COUNT LESS 1)
     xcode_error ("Failed to find architectures list"
-        " in file \"${PLATFORM_SDK}/SDKSettings.json\""
+        "in file \"${PLATFORM_SDK}/SDKSettings.json\""
         ${CMAKE_CURRENT_LIST_LINE})
 endif()
 foreach (ID RANGE MATH(EXPR VAR "${CPU_ARCH_COUNT} - 1"))
@@ -179,8 +198,8 @@ if (NOT ARCHS MATCHES "^\\s*$")
     foreach (ID IN LISTS CMAKE_OSX_ARCHITECTURES)
         if (NOT ID IN_LIST ARCHS)
             xcode_warn (
-                "Xcode's ARCHS environment-variable forced override"
-                " (of the SDK default: '${CMAKE_OSX_ARCHITECTURES}')"
+                "Xcode's ARCHS environment-variable forced '${ARCHS}'"
+                "(overriding SDK default: '${CMAKE_OSX_ARCHITECTURES}')"
                 ${CMAKE_CURRENT_LIST_LINE}
             )
             set (CMAKE_OSX_ARCHITECTURES ${ARCHS})
@@ -238,8 +257,8 @@ if (NOT DEFINED PLATFORM_ARCH)
             set (PLATFORM_ARCH "$ENV{PLATFORM_PREFERRED_ARCH}")
         else()
             xcode_error ("Invalid PLATFORM_PREFERRED_ARCH environment-variable"
-                " => \"$ENV{PLATFORM_PREFERRED_ARCH}\""
-                " - available-archs: \"${CMAKE_OSX_ARCHITECTURES}\""
+                "=> \"$ENV{PLATFORM_PREFERRED_ARCH}\""
+                "- available-archs: \"${CMAKE_OSX_ARCHITECTURES}\""
                 ${CMAKE_CURRENT_LIST_LINE})
         endif()
     endif()
